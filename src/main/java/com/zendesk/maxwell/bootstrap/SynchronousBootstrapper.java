@@ -85,7 +85,9 @@ public class SynchronousBootstrapper {
 	}
 
 	public void performBootstrap(BootstrapTask task, AbstractProducer producer, Long currentSchemaID) throws Exception {
-		LOGGER.debug("bootstrapping requested for " + task.logString());
+		if (LOGGER.isDebugEnabled()) {
+			LOGGER.debug("bootstrapping requested for {}", task.logString());
+		}
 
 		Table table = getTableForTask(task);
 
@@ -107,7 +109,7 @@ public class SynchronousBootstrapper {
 					scripting.invoke(row);
 
 				if ( LOGGER.isDebugEnabled() )
-					LOGGER.debug("bootstrapping row : " + row.toJSON());
+					LOGGER.debug("bootstrapping row : {}", row.toJSON());
 
 				producer.push(row);
 				++insertedRows;
@@ -174,7 +176,7 @@ public class SynchronousBootstrapper {
 		Statement statement = createBatchStatement(connection);
 		String pk = table.getPKString();
 
-		String sql = String.format("select * from `%s`.%s", databaseName, tableName);
+		String sql = String.format("select * from `%s`.`%s`", databaseName, tableName);
 
 		if ( whereClause != null && !whereClause.equals("") ) {
 			sql += String.format(" where %s", whereClause);

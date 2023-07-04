@@ -42,7 +42,7 @@ public class MaxwellTestSupport {
 
 		Connection conn = server.getConnection();
 		SchemaStoreSchema.ensureMaxwellSchema(conn, "maxwell");
-		conn.createStatement().executeQuery("use maxwell");
+		conn.createStatement().execute("use maxwell");
 		SchemaStoreSchema.upgradeSchemaStoreSchema(conn);
 		return server;
 	}
@@ -122,6 +122,28 @@ public class MaxwellTestSupport {
 
 		config.filter = filter;
 		config.initPosition = p;
+
+		return new MaxwellContext(config);
+	}
+
+	public static MaxwellContext buildContext(Consumer<MaxwellConfig> maxwellConfigConsumer)
+			throws SQLException, URISyntaxException {
+		MaxwellConfig config = new MaxwellConfig();
+
+		config.replicationMysql.host = "127.0.0.1";
+		config.replicationMysql.user = "maxwell";
+		config.replicationMysql.password = "maxwell";
+		config.replicationMysql.sslMode = SSLMode.DISABLED;
+
+		config.maxwellMysql.host = "127.0.0.1";
+
+		config.maxwellMysql.user = "maxwell";
+		config.maxwellMysql.password = "maxwell";
+		config.maxwellMysql.sslMode = SSLMode.DISABLED;
+
+		config.databaseName = "maxwell";
+
+		maxwellConfigConsumer.accept(config);
 
 		return new MaxwellContext(config);
 	}
@@ -223,7 +245,7 @@ public class MaxwellTestSupport {
 
 		long finalHeartbeat = maxwell.context.getPositionStore().heartbeat();
 
-		LOGGER.debug("running replicator up to heartbeat: " + finalHeartbeat);
+		LOGGER.debug("running replicator up to heartbeat: {}", finalHeartbeat);
 
 		Long pollTime = 5000L;
 		Position lastPositionRead = null;
@@ -234,8 +256,9 @@ public class MaxwellTestSupport {
 			pollTime = 500L; // after the first row is received, we go into a tight loop.
 
 			if ( row != null ) {
-				if ( row.toJSON(config.outputConfig) != null ) {
-					LOGGER.debug("getRowsWithReplicator: saw: " + row.toJSON(config.outputConfig));
+				String outputConfigJson = row.toJSON(config.outputConfig);
+				if ( outputConfigJson != null ) {
+					LOGGER.debug("getRowsWithReplicator: saw: {}", outputConfigJson);
 					list.add(row);
 				}
 				lastPositionRead = row.getPosition();
@@ -246,7 +269,7 @@ public class MaxwellTestSupport {
 			boolean timedOut = !replicationComplete && row == null;
 
 			if (timedOut) {
-				LOGGER.debug("timed out waiting for final row. Last position we saw: " + lastPositionRead);
+				LOGGER.debug("timed out waiting for final row. Last position we saw: {}", lastPositionRead);
 				break;
 			}
 

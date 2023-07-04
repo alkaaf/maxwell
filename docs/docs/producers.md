@@ -36,7 +36,9 @@ the "new producer" configuration, as described here:
 [http://kafka.apache.org/documentation.html#newproducerconfigs](http://kafka.apache.org/documentation.html#newproducerconfigs)
 
 
-## Highest throughput
+## Example kafka configs
+
+### Highest throughput
 
 These properties would give high throughput performance.
 
@@ -46,7 +48,7 @@ kafka.compression.type = snappy
 kafka.retries=0
 ```
 
-## Most reliable
+### Most reliable
 
 For at-least-once delivery, you will want something more like:
 
@@ -57,7 +59,7 @@ kafka.retries = 5 # or some larger number
 
 And you will also want to set `min.insync.replicas` on Maxwell's output topic.
 
-## Keys
+## Key format
 
 Maxwell generates keys for its Kafka messages based upon a mysql row's primary key in JSON format:
 
@@ -112,7 +114,7 @@ your updates), you must set both:
 When partitioning by column Maxwell will treat the values for the specified
 columns as strings, concatenate them and use that value to partition the data.
 
-## Kafka partitioning
+### Kafka partitioning
 
 A binlog event's partition is determined by the selected hash function and hash string as follows
 
@@ -216,7 +218,12 @@ See the [AWS docs](http://docs.aws.amazon.com/sdk-for-java/v1/developer-guide/cr
 In case you need to set up a different region also along with credentials then default one, see the [AWS docs](http://docs.aws.amazon.com/sdk-for-java/v1/developer-guide/setup-credentials.html#setup-credentials-setting-region).
 
 ## Options
-Set the output queue in the `config.properties` by setting the `sqs_queue_uri` property to full SQS queue uri from AWS console.
+Set the output queue in the `config.properties` by setting the following properites
+
+- **sqs_signing_region**: the region to use for SigV4 signing of requests. e.g. `us-east-1`
+- **sqs_service_endpoint**: the service endpoint either with or without the protocol (e.g. `https://sns.us-west-1.amazonaws.com` or `sns.us-west-1.amazonaws.com`)
+- **sqs_queue_uri**: the full SQS queue uri from AWS console. e.g. `https://sqs.us-east-1.amazonaws.com/xxxxxxxxxxxx/maxwell`
+
 
 The producer uses the [AWS SQS SDK](http://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/com/amazonaws/services/sqs/AmazonSQSClient.html).
 
@@ -262,6 +269,34 @@ for DDL updates by setting the `ddl_pubsub_topic` property.
 
 The producer uses the [Google Cloud Java Library for Pub/Sub](https://github.com/GoogleCloudPlatform/google-cloud-java/tree/master/google-cloud-pubsub) and uses its built-in configurations.
 
+# Google Cloud BigQuery
+***
+To stream data into Google Cloud Bigquery, first there must be a table created on bigquery in order to stream the data
+into defined as `bigquery_project_id.bigquery_dataset.bigquery_table`. The schema of the table must match the outputConfig. The column types should be defined as below
+
+- database: string 
+- table: string                                                                                                    
+- type: string                                                                                                     
+- ts: integer                                                                                                      
+- xid: integer                                                                                                     
+- xoffset: integer                                                                                                 
+- commit: boolean                                                                                                  
+- position: string                                                                                                 
+- gtid: string                                                                                                     
+- server_id: integer                                                                                               
+- primary_key: string                                                                                              
+- data: string                                                                                                     
+- old: string
+
+See the Google Cloud Platform docs for the [latest examples of which permissions are needed](https://cloud.google.com/bigquery/docs/access-control), as well as [how to properly configure service accounts](https://cloud.google.com/compute/docs/access/create-enable-service-accounts-for-instances).
+
+Set the output stream in `config.properties` by setting the `bigquery_project_id`, `bigquery_dataset` and `bigquery_table` properties.
+
+The producer uses the [Google Cloud Java Bigquery Storage Library for Bigquery](https://github.com/googleapis/java-bigquerystorage) [Bigquery Storage Write API documenatation](https://cloud.google.com/bigquery/docs/write-api).
+To use the Storage Write API, you must have `bigquery.tables.updateData` permissions.
+
+This producer is using the Default Stream with at-least once semantics for greater data resiliency and fewer scaling restrictions
+
 # RabbitMQ
 ***
 To produce messages to RabbitMQ, you will need to specify a host in `config.properties` with `rabbitmq_host`. This is the only required property, everything else falls back to a sane default.
@@ -271,6 +306,7 @@ The remaining configurable properties are:
 - `rabbitmq_user` - defaults to **guest**
 - `rabbitmq_pass` - defaults to **guest**
 - `rabbitmq_virtual_host` - defaults to **/**
+- `rabbitmq_handshake_timeout` - defaults to **10000**
 - `rabbitmq_exchange` - defaults to **maxwell**
 - `rabbitmq_exchange_type` - defaults to **fanout**
 - `rabbitmq_exchange_durable` - defaults to **false**
@@ -284,15 +320,11 @@ For more details on these options, you are encouraged to the read official Rabbi
 
 # Redis
 ***
-Set the output stream in `config.properties` by setting the `redis_type`
-property to either `pubsub`, `xadd`, `lpush` or `rpsuh`. The `redis_key` is
-used as a channel for `pubsub`, as stream key for `xadd` and as key for `lpush`
-and `rpush`.
 
-Maxwell writes to a Redis channel named "maxwell" by default. It can be static,
-e.g. 'maxwell', or dynamic, e.g. `namespace_%{database}_%{table}`. In the
-latter case 'database' and 'table' will be replaced with the values for the row
-being processed. This can be changed with the `redis_pub_channel`, `redis_list_key` and `redis_stream_key` option.
+Choose type of redis data structure to create to by setting `redis_type` to one of:
+`pubsub`, `xadd`, `lpush` or `rpush`.  The default is `pubsub`.
+
+`redis_key` defaults to "maxwell" and supports [topic substitution](#topic-substitution)
 
 Other configurable properties are:
 
@@ -308,11 +340,11 @@ Other configurable properties are:
 
 # Custom Producer
 ***
-If none of the producers packaged with Maxwell meet your requirements, a custom producer can be added at runtime. The producer is responsible for processing the raw database rows. Note that your producer may receive DDL and heartbeat rows as well, but your producer can easily filter them out (see example).
+If none of the producers packaged with Maxwell meet your requirements, a custom producer can be added at runtime.  
 
-In order to register your custom producer, you must implement the `ProducerFactory` interface, which is responsible for creating your custom `AbstractProducer`. Next, set the `custom_producer.factory` configuration property to your `ProducerFactory`'s fully qualified class name. Then add the custom `ProducerFactory` and all its dependencies to the $MAXWELL_HOME/lib directory.
+In order to register your custom producer, you must implement the `ProducerFactory` interface, which is responsible for creating your custom `AbstractProducer`. Next, set the `custom_producer.factory` configuration property to your `ProducerFactory`'s fully qualified class name. Then add the custom `ProducerFactory` JAR and all its dependencies to the $MAXWELL_HOME/lib directory.
 
-Your custom producer will likely require configuration properties as well. For that, use the `custom_producer.*` property namespace. Those properties will be exposed to your producer via `MaxwellConfig.customProducerProperties`.
+Your custom producer will likely require configuration properties as well. For that, use the `custom_producer.*` (or `CUSTOM_PRODUCER_*` if using env-variable configuration) property namespace. Those properties will be available to your producer via `MaxwellConfig.customProducerProperties`.
 
 Custom producer factory and producer examples can be found here: [https://github.com/zendesk/maxwell/tree/master/src/example/com/zendesk/maxwell/example/producerfactory](https://github.com/zendesk/maxwell/tree/master/src/example/com/zendesk/maxwell/example/producerfactory)
 

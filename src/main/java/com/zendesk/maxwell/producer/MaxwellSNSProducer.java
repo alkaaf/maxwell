@@ -35,7 +35,7 @@ public class MaxwellSNSProducer extends AbstractAsyncProducer {
 
 	@Override
 	public void sendAsync(RowMap r, CallbackCompleter cc) throws Exception {
-		String value = r.toJSON();
+		String value = r.toJSON(outputConfig);
 		// Publish a message to an Amazon SNS topic.
 		final PublishRequest publishRequest = new PublishRequest(topic, value);
 		Map<String, MessageAttributeValue> messageAttributes = new HashMap<>();
@@ -103,7 +103,7 @@ class SNSCallback implements AsyncHandler<PublishRequest, PublishResult> {
 	@Override
 	public void onSuccess(PublishRequest request, PublishResult result) {
 		if (logger.isDebugEnabled()) {
-			logger.debug("-> MessageId: " + result.getMessageId());
+			logger.debug("-> MessageId: {}", result.getMessageId());
 		}
 		cc.markCompleted();
 	}
